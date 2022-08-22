@@ -11,6 +11,6 @@ llh: llh/DirectFit. Compiles against either version of ppc (gpu or ocl).
 bfr: BireFRingence code. Calculates birefringence patterns for various crystal ice configurations
 
 ice: contains bare-minimum configurations for selected IceCube ice models (to be used with ppc)
-- spice_bfr-v2
-  
+- spice_bfr-v2: South Pole ICE based on BireFRingence with absorption anisotropy model
+
 doc: [documentation](doc/index.rst)
