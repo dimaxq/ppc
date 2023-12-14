@@ -32,6 +32,8 @@ typedef struct{
   cl_float4 r;    // location, time
   cl_float4 n;    // direction, track length
   cl_uint q;      // track segment
+  cl_uint num;    // number of photons in this bunch
+  cl_int type;    // source type
   cl_float f;     // fraction of light from muon alone (without cascades)
   union{
     struct{
@@ -44,9 +46,8 @@ typedef struct{
       cl_float fldr;   // horizontal direction of the flasher led #1
       cl_short fla, ofla;
     };
+    cl_int4 c;  // for quick copy
   };
-  cl_uint num;    // number of photons in this bunch
-  cl_int type;    // source type
 } photon;
 
 typedef struct{
@@ -532,27 +533,39 @@ __kernel void propagate(__private uint num,
 	n=turn(cs, si, n, &s);
       }
       else{
-	if(p.f<xrnd(&s)){ // cascade particle dirctions
+	float cs=w->coschr, si=w->sinchr;
+
+	if(p.f<xrnd(&s)){ // cascade particle directions
 	  const float a=0.39f, b=2.61f;
 	  const float I=1-exp(-b*exp2(a));
 	  float cs=max(1-pow(-log(1-xrnd(&s)*I)/b, 1/a), -1.0f);
 	  float si=sqrt(1-cs*cs); n=turn(cs, si, n, &s);
 	}
-
-	{ // sampling cherenkov cone
-	  float cs=w->coschr, si=w->sinchr;
-	  if(p.beta<1){
-	    float xi=w->coschr/p.beta;
-	    if(xi<=1) cs=xi, si=sqrt(1-xi*xi);
+	else{
+	  float beta=p.beta;
+	  if(p.type<0){ // muon end point; assuming p.beta=1
+	    const float ar=0.26f*0.9216f/0.105658389f;  // a [GeV/mwe] * density [mwe/m] / muon rest mass [GeV]
+	    float dx=ar*(p.n.w-l);
+	    beta=sqrt(dx*(2+dx))/(1+dx);
+	    if(beta>=cs) r.w-=e.ocv*(sqrt(dx*dx+1)-asinh(1/dx)-dx)/ar;
 	  }
-	  n=turn(cs, si, n, &s);
+	  if(beta<1){
+	    float xi=cs/beta;
+	    if(xi<=1){
+	      float sx=sqrt(1-xi*xi);
+	      if(p.type<0) if(sx<xrnd(&s)*si) ofla=-3;
+	      cs=xi, si=sx;
+	    }
+	    else ofla=-2;
+	  }
 	}
+	n=turn(cs, si, n, &s); // sampling cherenkov cone
       }
     }
 
     pbuf f; f.r=r, f.n=n; f.q=j; f.i=niw; f.fla=fla, f.ofla=ofla; bf[i]=f;
   }
-  write_mem_fence(CLK_GLOBAL_MEM_FENCE | CLK_LOCAL_MEM_FENCE);
+  barrier(CLK_GLOBAL_MEM_FENCE);
 
   int ofla=-1;
   for(uint i=idx; i<num; TOT==0 && (i=atomic_add(&e.hidx, get_num_groups(0)))){

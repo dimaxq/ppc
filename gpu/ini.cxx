@@ -341,6 +341,10 @@ struct hit{
 };
 
 #ifdef XCPU
+struct int4{
+  int x, y, z, w;
+};
+
 struct float2{
   float x, y;
 };
@@ -366,6 +370,8 @@ struct photon{
   float4 r;    // location, time
   float4 n;    // direction, track length
   unsigned int q; // track segment
+  unsigned int num; // number of photons in this bunch
+  int type;    // source type
   float f;     // fraction of light from muon alone (without cascades)
   union{
     struct{
@@ -378,9 +384,8 @@ struct photon{
       float fldr;   // horizontal direction of the flasher led #1
       short fla, ofla;
     };
+    int4 c;  // for quick copy
   };
-  unsigned int num; // number of photons in this bunch
-  int type;    // source type
 };
 
 struct ices{
@@ -1482,7 +1487,7 @@ struct ini{
 	else{ cerr << "File icemodel.dat was not found" << endl; exit(1); }
       }
 
-      dh=dp[1]-dp[0];
+      dh=(dp[size-1]-dp[0])/(size-1);
       if(dh<=0){ cerr << "Ice table does not use increasing depth spacing" << endl; exit(1); }
 
       for(int i=0; i<size; i++) if(i>0) if(fabs(dp[i]-dp[i-1]-dh)>dh*XXX){
