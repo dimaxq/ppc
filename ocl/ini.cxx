@@ -562,8 +562,10 @@ struct ini{
 
       cerr<<"Loaded "<<size<<" random multipliers"<<endl;
 
+#ifndef DTMN
       timeval tv; gettimeofday(&tv, NULL);
       sv=1000000*(unsigned long long)tv.tv_sec+tv.tv_usec;
+#endif
 
       d.rsize=size;
       for(int i=0; i<size; i++) z.rm[i]=rx[i];
@@ -1124,7 +1126,17 @@ struct ini{
 	  cerr<<"Using single wavelength="<<wfla<<" [nm]"<<endl;
 	}
 	else{
-	  ifstream inFile((ppcdir+"wv.dat").c_str(), ifstream::in);
+	  string flwl("dat");
+	  {
+	    char * env=getenv("FLWL");
+	    if(env!=NULL){
+	      flwl=string(env);
+	      cerr<<"wv.dat file extension is modified with FLWL="<<flwl<<endl;
+	    }
+	  }
+
+	  flwl="wv."+flwl;
+	  ifstream inFile((ppcdir+flwl).c_str(), ifstream::in);
 	  if(!inFile.fail()){
 	    int num=0;
 	    float xa, ya, xo=0, yo=0;
@@ -1136,9 +1148,9 @@ struct ini{
 	    if(xo!=1 || wx.size()<2) flag=false;
 	    inFile.close();
 	    if(flag){ cerr<<"Loaded "<<wx.size()<<" wavelenth points"<<endl; }
-	    else{ cerr<<"File wv.dat did not contain valid data"<<endl; exit(1); }
+	    else{ cerr<<"File "<<flwl<<" did not contain valid data"<<endl; exit(1); }
 	  }
-	  else{ cerr<<"Could not open file wv.dat"<<endl; exit(1); }
+	  else{ cerr<<"Could not open file "<<flwl<<endl; exit(1); }
 	}
 
 	if(flag){

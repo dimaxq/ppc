@@ -265,37 +265,28 @@ int findcol(__local dats * d, int x, int y){
   return x>=0 && x<d->mnum[0] && y>=0 && y<d->mnum[1] ? d->mcol[x][y] : -1;
 }
 
-float midp(float2 q, float z){
-  return q.x+q.y*z;
-}
-
-float interpolate(__local dats * d, int j, float nr, float z, __global datz * p){
-  int i=j-1, k=clamp(convert_int_sat_rtn(z), 0, d->lpts);
-  return ( midp(p->lp[j][k], z-k)*(nr-d->lr[i]) +
-	   midp(p->lp[i][k], z-k)*(d->lr[j]-nr) )/(d->lr[j]-d->lr[i]);
-}
-
-float interpolatE(__local dats * d, int3 c, float3 w, float z, __global datz * p){
-  int k=clamp(convert_int_sat_rtn(z), 0, d->lpts);
-  return
-    ( c.x<0?0: midp(p->lp[c.x][k], z-k)*w.x )+
-    ( c.y<0?0: midp(p->lp[c.y][k], z-k)*w.y )+
-    ( c.z<0?0: midp(p->lp[c.z][k], z-k)*w.z );
-}
-
-float zshift(__local dats * d, float4 r, int sign, float * dz, __global datz * p){
+float zshift(__local dats * d, float4 r, float * dz, __global datz * p){
   if(d->tmod==1){
     float nr=d->lnx*r.x+d->lny*r.y-d->r0;
     int j=1; for(; j<LMAX; j++) if(nr<d->lr[j] || j==d->lnum-1) break;
 
-    float z1=(r.z-d->lmin)*d->lrdz;
-    float r1=interpolate(d, j, nr, z1, p);
-    if(sign!=0){
-      float z2=z1+sign**dz*d->lrdz;
-      float r2=interpolate(d, j, nr, z2, p);
-      *dz /= 1-sign*(r2-r1)/ *dz;
-    }
-    return r1;
+    float z=(r.z-d->lmin)*d->lrdz;
+    int i=j-1, k=clamp(convert_int_sat_rtn(z), 0, d->lpts);
+
+    float2 pi=p->lp[i][k], pj=p->lp[j][k];
+
+    float2 w, q;
+    float dw = d->lr[j]-d->lr[i];
+
+    w.x = (nr-d->lr[i])/dw;
+    w.y = (d->lr[j]-nr)/dw;
+
+    q.x = pj.x*w.x + pi.x*w.y;
+    q.y = pj.y*w.x + pi.y*w.y;
+
+    float r = q.x + q.y*(z-k);
+    if(d->vthk!=0) *dz /= 1 - d->lrdz * q.y;
+    return r;
   }
   else if(d->tmod==2){
     float2 q; // ctr(d, r, q);
@@ -346,22 +337,26 @@ float zshift(__local dats * d, float4 r, int sign, float * dz, __global datz * p
     }
 
     int3 c;
-    c.x=findcol(d, qn.x, qn.y);
-    c.y=findcol(d, qnx, qny);
-    c.z=findcol(d, qn.x+1, qn.y+1);
+    c.x = findcol(d, qn.x, qn.y);
+    c.y = findcol(d, qnx, qny);
+    c.z = findcol(d, qn.x+1, qn.y+1);
 
     float3 w;
     w.x=1-qrx, w.y=qrx-qry, w.z=qry;
 
-    float z1=(r.z-d->lmin)*d->lrdz;
-    float r1=interpolatE(d, c, w, z1, p);
-    if(sign!=0){
-      float z2=z1+sign**dz*d->lrdz;
-      float r2=interpolatE(d, c, w, z2, p);
-      *dz /= 1-sign*(r2-r1)/ *dz;
-    }
+    float z=(r.z-d->lmin)*d->lrdz;
+    int k=clamp(convert_int_sat_rtn(z), 0, d->lpts);
 
-    return r1;
+    float2 px=p->lp[c.x][k], py=p->lp[c.y][k], pz=p->lp[c.z][k];
+
+    q.x=0, q.y=0;
+    if(c.x>=0) q.x+=px.x*w.x, q.y+=px.y*w.x;
+    if(c.y>=0) q.x+=py.x*w.y, q.y+=py.y*w.y;
+    if(c.z>=0) q.x+=pz.x*w.z, q.y+=pz.y*w.z;
+
+    float r = q.x + q.y*(z-k);
+    if(d->vthk!=0) *dz /= 1 - d->lrdz * q.y;
+    return r;
   }
   else return 0;
 }
@@ -381,6 +376,14 @@ float zshift(__local dats * d, float4 r, int sign, float * dz, __global datz * p
 float2 ctr(__local dats * d, float2 r){
   return (float2)(d->cb[0][0]*r.x+d->cb[1][0]*r.y, d->cb[0][1]*r.x+d->cb[1][1]*r.y);
 }
+
+#ifdef DTMN
+#define XINC i+=e.hidx
+#define XIDX get_global_size(0)
+#else
+#define XINC i=atomic_add(&e.hidx, get_num_groups(0))
+#define XIDX get_global_size(0)+get_group_id(0)
+#endif
 
 __kernel void propagate(__private uint num,
 			__global dats * ed,
@@ -406,7 +409,7 @@ __kernel void propagate(__private uint num,
   {
     event_t ev=async_work_group_copy((__local char *) &e, (__global char *) ed, sizeof(e), 0);
     wait_group_events(1, &ev);
-    if(get_local_id(0)==0) e.hidx=get_global_size(0)+get_group_id(0);
+    if(get_local_id(0)==0) e.hidx=XIDX;
     barrier(CLK_LOCAL_MEM_FENCE);
   }
 
@@ -568,7 +571,7 @@ __kernel void propagate(__private uint num,
   barrier(CLK_GLOBAL_MEM_FENCE);
 
   int ofla=-1;
-  for(uint i=idx; i<num; TOT==0 && (i=atomic_add(&e.hidx, get_num_groups(0)))){
+  for(uint i=idx; i<num; TOT==0 && (XINC)){
     int om=-1;
     if(TOT==0){ // initialize photon
       pbuf f=bf[i];
@@ -590,7 +593,7 @@ __kernel void propagate(__private uint num,
     float anz=sign*n.z;
 
     float edh = e.dh;
-    float z = r.z - zshift(&e, r, e.vthk==0?0:sign, &edh, ez); // tilt correction
+    float z = r.z - zshift(&e, r, &edh, ez); // tilt correction
 
     float nr=1.f;
     int I, J;
@@ -755,7 +758,7 @@ __kernel void propagate(__private uint num,
       { // get overburden for distance
 	float xs=0, xa=0;
 
-	float y=z+n.z*fin*e.rdh;
+	float y=z+n.z*fin/edh;
 	J=clamp(convert_int_sat_rte(y), 0, e.size-1);
 
 	if(I==J) xs=fin*w->z[I].sca, xa=fin*w->z[I].abs;
@@ -831,7 +834,7 @@ __kernel void propagate(__private uint num,
 	{ // get overburden for distance
 	  if(I==J) ra=fin*e.az[I].ra, rb=fin*e.az[I].rb;
 	  else{
-	    float y=z+n.z*fin*e.rdh;
+	    float y=z+n.z*fin/edh;
 	    float h=0.5f-sign*(z-I);
 	    float g=0.5f+sign*(y-J);
 	    ra=h*e.az[I].ra+g*e.az[J].ra;

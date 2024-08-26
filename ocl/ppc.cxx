@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstring>
 
+#define CL_USE_DEPRECATED_OPENCL_1_2_APIS
+
 #ifdef __APPLE_CC__
 #include <OpenCL/opencl.h>
 #else
@@ -20,6 +22,10 @@
 using namespace std;
 
 namespace xppc{
+#if defined(__APPLE_CC__)
+  void sincosf(float x, float * s, float * c){ __sincosf(x, s, c); }
+#endif
+
 #define LMAX 80      // number of dust loggers
 #define LYRS 172     // number of depth points
 
@@ -40,6 +46,7 @@ namespace xppc{
 #define MAXGEO 16384 // maximum number of OMs
 #define MAXRND 131072 // max. number of random number multipliers
 
+#define DTMN
 #define XXX 1.e-5f
 #define FPI 3.141592653589793f
 #define OMR 0.16510f  // DOM radius [m]
@@ -625,9 +632,11 @@ namespace xppc{
 #ifndef XLIB
 using namespace xppc;
 
+float zdh;
+
 float zshift(cl_float4 r){
-  float edh=d.dh;
-  return zshift(&d, r, 0, &edh, &z);
+  zdh=d.dh;
+  return zshift(&d, r, &zdh, &z);
 }
 
 int main(int arg_c, char *arg_a[]){
@@ -653,6 +662,20 @@ int main(int arg_c, char *arg_a[]){
       float z=d.hmin+d.dh*i;
       r.z=z; for(int j=0; j<10; j++) r.z=z+zshift(r); z=r.z;
       cout<<z<<" "<<w.z[i].abs<<" "<<w.z[i].sca*(1-d.g)<<" "<<d.az[i].ra*d.sum<<endl;
+    }
+  }
+  else if(0==strcmp(arg_a[1], "=")){
+    initialize();
+    ices & w = z.w[WNUM/2];
+    cerr<<"For wavelength="<<q.wvs[w.wvl]<<" [nm]  np="<<(1/w.coschr)<<"  cm="<<1/w.ocm<<" [m/ns]"<<endl;
+    cl_float4 r;
+    r.w=0;
+    string in;
+    while(getline(cin, in)){
+      if(3==sscanf(in.c_str(), "%f %f %f", &r.x, &r.y, &r.z)){
+	float dz=zshift(r);
+	cout<<in<<" "<<dz<<" "<<zdh<<endl;
+      }
     }
   }
   else if(0==strcmp(arg_a[1], "_")){

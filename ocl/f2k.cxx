@@ -226,14 +226,25 @@ deque<string> flnz;
 unsigned int flnb=0, flne=0;
 unsigned int flnd=0;
 
+#ifdef DTMN
+int sign(float x){ return x<0?-1:x>0?1:0; }
+#endif
+
 int hcmp(const void *a, const void *b){
   hit & ah = * (hit *) a;
   hit & bh = * (hit *) b;
+#ifdef DTMN
+  return ah.n!=bh.n ? (int)(ah.n-bh.n) : ah.i!=bh.i ? (int)(ah.i-bh.i) : ah.t!=bh.t ? sign(ah.t-bh.t) : sign(ah.z-bh.z);
+#else
   return (int) ( ah.n - bh.n );
+#endif
 }
 
 void print(){
-  if((int) ( flnb - flnd ) < 0) qsort(q.hits, d.hidx, sizeof(hit), hcmp);
+#ifndef DTMN
+  if((int) ( flnb - flnd ) < 0)
+#endif
+    qsort(q.hits, d.hidx, sizeof(hit), hcmp);
 
   for(unsigned int i=0; i<d.hidx; i++){
     hit & h = q.hits[i];
@@ -363,7 +374,7 @@ void addh(unsigned long long num){
   if(pn>0 && pk==0) q.pz[pk++]=p;
 }
 
-double gammln(double xx){
+double gammln(double xx){  // gamma function
   static const double stp = 2.5066282746310005;
   static const double cof[6] = {76.18009172947146, -86.50532032941677, 24.01409824083091,
 			  -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5};
@@ -379,7 +390,7 @@ double gammln(double xx){
   return -tmp+log(stp*ser);
 }
 
-unsigned long long poidev(double xm){
+unsigned long long poidev(double xm){  // sample Poisson distribution with mean xm
   double sq, alxm, g, t, y;
   unsigned long long um;
 
@@ -411,7 +422,7 @@ unsigned long long poidev(double xm){
   return um;
 }
 
-unsigned long long bnldev(unsigned long long n, double pp){
+unsigned long long bnldev(unsigned long long n, double pp){  // down-sample with binomial distribution
   unsigned long long j, bnl;
   double am, em, g, angle, p, sq, t, y;
   double pc, plog, pclog, en, oldg;
@@ -553,10 +564,6 @@ void f2k(){
 }
 #endif
 
-#if defined(__APPLE_CC__) || defined(__FreeBSD__)
-void sincosf(float x, float * s, float * c){ *s = sin(x); *c = cos(x); }
-#endif
-
 void flone(unsigned long long num){
   addh(num*(q.eff/dppm)/ovr);
 }
@@ -653,7 +660,7 @@ const DOM& flset(int str, int dom){
 
 #ifdef XLIB
 const float * fldir(){
-  static float dir[3]= {pfl.n.x, pfl.n.y, pfl.n.z};
+  static float dir[3] = {pfl.n.x, pfl.n.y, pfl.n.z};
   return dir;
 }
 
